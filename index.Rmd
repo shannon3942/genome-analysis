@@ -9,5 +9,5 @@ bibliography: data/references.bib
 *[Lab5](Lab5_sjs.html)
 
 Application written in R [@RCoreTeam] using the Shiny framework [@Chang2015]
-
+ 
 # References 
