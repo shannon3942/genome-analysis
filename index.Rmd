@@ -5,9 +5,22 @@ date: "2/26/2020"
 output: html_document
 bibliography: data/references.bib
 ---
+![# Welcome to my website of R-coding!](Rlogo.png)
 
-*[Lab5](Lab5_sjs.html)
+
+## Below, you will see all of the labs completed thus far and presented in preparation for Lab #6
+
+# Labs completed as of 26_February_2020
+
+*[Lab2](lab2b_sjs.html),
+*[Lab3](lab3_sjs.html),
+*[Lab4](Lab-4_sjs.html),
+*[Lab5](Lab5_sjs.html) 
+
+
 
 Application written in R [@RCoreTeam] using the Shiny framework [@Chang2015]
+
+
  
 # References 
