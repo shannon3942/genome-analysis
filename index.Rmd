@@ -5,10 +5,9 @@ date: "2/26/2020"
 output: html_document
 bibliography: data/references.bib
 ---
-![# Welcome to my website of R-coding!](Rlogo.png)
+![Welcome to my website of R-coding!](Rlogo.png)
 
-
-## Below, you will see all of the labs completed thus far and presented in preparation for Lab #6
+Below, you will see all of the labs completed thus far and presented in preparation for Lab #6
 
 # Labs completed as of 26_February_2020
 
