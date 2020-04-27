@@ -1,0 +1,706 @@
+---
+title: "Lab 7_sjs"
+author: "Shannon Silva"
+date: "3/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The data used in this tutorial is taken from the "airway" package and sumnmarizes an RNA-seq experiment where smooth muscle cells were treated with dexamethansone. 
+
+In the experiment, four primary human airway smooth muscle cell lines were treated with 1 micromolar dexamethasone for 18 hours. For each of the four cell lines, we have a treated and an untreated sample. For more description of the experiment see the PubMed entry 24926665 and for raw data see the GEO entry GSE52778.
+
+```{r}
+## ----loadairway------------------------------------------------------------
+library("airway")
+
+# system.file can be used to find where on the computer the files from a package have been installed. Exdata, asks for the full path to where R packages store external data. 
+
+## ----dir-------------------------------------------------------------------
+dir <- system.file("extdata", package="airway", mustWork=TRUE)
+
+```
+
+```{r}
+# Quantification directories which has output from Salmon on two files. 
+
+## ----list.files------------------------------------------------------------
+list.files(dir)
+list.files(file.path(dir, "quants"))
+
+```
+
+```{r}
+# Load CSV file. 
+
+## ----sampleinfo------------------------------------------------------------
+csvfile <- file.path(dir, "sample_table.csv")
+coldata <- read.csv(csvfile, row.names=1, stringsAsFactors=FALSE)
+coldata
+```
+
+```{r}
+# Create a column called names and a column called files. 
+## ----makecoldata-----------------------------------------------------------
+coldata <- coldata[1:2,]
+coldata$names <- coldata$Run
+coldata$files <- file.path(dir, "quants", coldata$names, "quant.sf.gz")
+file.exists(coldata$files)
+
+```
+
+```{r}
+#Load tximeta package and run main function: importing transcript-level quantification data and aggregating it to the gene-level
+## ----tximeta, message=TRUE-------------------------------------------------
+library("tximeta")
+se <- tximeta(coldata)
+
+```
+
+```{r}
+# Gives the dimensions of the matrix/array/data frame and gives the rownames, 
+## ----lookse----------------------------------------------------------------
+dim(se)
+head(rownames(se))
+
+# Summarize the transcript-level quantifications to the gene level.
+## ----summarize, message=TRUE-----------------------------------------------
+gse <- summarizeToGene(se)
+
+## ----lookgse---------------------------------------------------------------
+dim(gse)
+head(rownames(gse))
+
+```
+
+SummarizedExperiment Object:
+  assay-contains the matric of counts;
+  rowRanges-info about the genomic ranges;
+  colData-info about the samples. 
+
+(The highlighted line in each colored block represents the first row)
+
+
+```{r}
+# assay-contains the matrix of counts; rowRanges-info about the genomic ranges;colData-info about the samples 
+## ----sumexp, echo=FALSE----------------------------------------------------
+par(mar=c(0,0,0,0))
+plot(1,1,xlim=c(0,100),ylim=c(0,100),bty="n",
+     type="n",xlab="",ylab="",xaxt="n",yaxt="n")
+polygon(c(45,90,90,45),c(5,5,70,70),col="pink",border=NA)
+polygon(c(45,90,90,45),c(68,68,70,70),col="pink3",border=NA)
+text(67.5,40,"assay(s)")
+text(67.5,35,'e.g. "counts", ...')
+polygon(c(10,40,40,10),c(5,5,70,70),col="skyblue",border=NA)
+polygon(c(10,40,40,10),c(68,68,70,70),col="skyblue3",border=NA)
+text(25,40,"rowRanges")
+polygon(c(45,90,90,45),c(75,75,95,95),col="palegreen",border=NA)
+polygon(c(45,47,47,45),c(75,75,95,95),col="palegreen3",border=NA)
+text(67.5,85,"colData")
+
+```
+
+```{r}
+#load the full count matrix containing all samples and all data. 
+## ----loadfullgse-----------------------------------------------------------
+data(gse)
+gse
+
+#The counts are considered as the first matrix, can evaluate them with the command "assay." Using assayNames with give you the different matrixes in the data. Adding head and a number will give you the first couple of lines of the matrix. Colsums will give you the sum of each comlumn. 
+## ----assaysgse-------------------------------------------------------------
+assayNames(gse)
+head(assay(gse), 3)
+colSums(assay(gse))
+
+#Shows the ranges for the first five and the last five genes in the data set "gse" 
+## ----rowrangesgse----------------------------------------------------------
+rowRanges(gse)
+
+#Rowranges gives you the output for all of the data but seqinfo breaks the data down by subgroups
+## ----lookseqinfo-----------------------------------------------------------
+seqinfo(rowRanges(gse))
+
+#data.frame that was provided to the tximeta function to import quantification data. 
+## ----coldatagse------------------------------------------------------------
+colData(gse)
+
+```
+
+```{r}
+#The $-sign allows you to see the subgroup "donor" and "condition" information
+## ----gsevars---------------------------------------------------------------
+gse$donor
+gse$condition
+
+#The arrows are being used to rename their variables. 
+## ----gsevarsrename---------------------------------------------------------
+gse$cell <- gse$donor
+gse$dex <- gse$condition
+
+#Levels will give the name information for the identities within a column. the arrow followed by the matrix allows for the "untreated" and "Dexamethasone" to be renamed to "untrt" and "trt"
+## ----renamelevels----------------------------------------------------------
+levels(gse$dex)
+# when renaming levels, the order must be preserved!
+levels(gse$dex) <- c("untrt", "trt")
+
+#The package magrittr is meant to decrease the development time of code and make code more concise. 
+## ----gsedex----------------------------------------------------------------
+library("magrittr")
+gse$dex %<>% relevel("untrt")
+gse$dex
+
+```
+
+```{r}
+#Check fragments that can be mapped by Salmon to the genes. The number tells the system how many decimal points to keep. 
+## ----explaincmpass, eval = FALSE-------------------------------------------
+#  gse$dex <- relevel(gse$dex, "untrt")
+
+## ----countreads------------------------------------------------------------
+round( colSums(assay(gse)) / 1e6, 1 )
+
+#Starting point of the analysis and add design.
+## ----loaddeseq2------------------------------------------------------------
+library("DESeq2")
+
+## ----makedds---------------------------------------------------------------
+dds <- DESeqDataSet(gse, design = ~ cell + dex)
+
+#On way to building an DESeqDataSet with a count matrix and a table of sample information. 
+## --------------------------------------------------------------------------
+countdata <- round(assays(gse)[["counts"]])
+head(countdata, 3)
+
+```
+
+```{r}
+#coldata is a table with information about the samples. 
+## --------------------------------------------------------------------------
+coldata <- colData(gse)
+
+#Creates a DESeqDataSet object from the matric of counts and the sample information table. 
+## --------------------------------------------------------------------------
+ddsMat <- DESeqDataSetFromMatrix(countData = countdata,
+                                 colData = coldata,
+                                 design = ~ cell + dex)
+
+#Code to remove the rows that have no or almost no information.
+## --------------------------------------------------------------------------
+nrow(dds)
+keep <- rowSums(counts(dds)) > 1
+dds <- dds[keep,]
+nrow(dds)
+
+#Specifies that at least 3 samples have a count of 10 or higher. 
+## --------------------------------------------------------------------------
+# at least 3 samples with a count of 10 or higher
+keep <- rowSums(counts(dds) >= 10) >= 3
+
+```
+
+```{r}
+#With RNA-seq data the variance grows with the mean. This code corrects the data to make sure that the spread isn't biased towards depending most on the highest counts which have the largest absolute differences.
+## ----meanSdCts-------------------------------------------------------------
+
+lambda <- 10^seq(from = -1, to = 2, length = 1000)
+cts <- matrix(rpois(1000*100, lambda), ncol = 100)
+library("vsn")
+meanSdPlot(cts, ranks = FALSE)
+
+#Logarithm-transformed counts.
+## ----meanSdLogCts----------------------------------------------------------
+log.cts.one <- log2(cts + 1)
+meanSdPlot(log.cts.one, ranks = FALSE)
+
+#The transformed values are no longer counts but are stored in the "assay" plot. 
+## ----vst-------------------------------------------------------------------
+vsd <- vst(dds, blind = FALSE)
+head(assay(vsd), 3)
+colData(vsd)
+
+## ----rlog------------------------------------------------------------------
+rld <- rlog(dds, blind = FALSE)
+head(assay(rld), 3)
+
+```
+
+```{r}
+#Data was graphed to show the effect of the transformation.
+## ----transformplot, fig.width = 6, fig.height = 2.5------------------------
+library("dplyr")
+library("ggplot2")
+
+dds <- estimateSizeFactors(dds)
+
+df <- bind_rows(
+  as_data_frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
+         mutate(transformation = "log2(x + 1)"),
+  as_data_frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"),
+  as_data_frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"))
+  
+colnames(df)[1:2] <- c("x", "y")  
+
+ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
+  coord_fixed() + facet_grid( . ~ transformation)  
+
+```
+
+```{r}
+#Calculates the Euclidean distance between samples. Use VST data to ensure that each gene contributes (roughly) equally to the calculation. (assesses the overall similarity between samples)
+## --------------------------------------------------------------------------
+sampleDists <- dist(t(assay(vsd)))
+sampleDists
+
+#Visualize the distances in a heatmap.
+## --------------------------------------------------------------------------
+library("pheatmap")
+library("RColorBrewer")
+
+#Plotting the sample distance matric with the rows/columns arranged by the distances in our distance matrix. RColorBrewer specifies the color.
+## ----distheatmap, fig.width = 6.1, fig.height = 4.5------------------------
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( vsd$dex, vsd$cell, sep = " - " )
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = colors)
+```
+
+```{r}
+#Calculates sample distances using the Poisson distanc. Measure of the dissimilarity between counts takes variance into account. 
+## --------------------------------------------------------------------------
+library("PoiClaClu")
+poisd <- PoissonDistance(t(counts(dds)))
+
+## ----poisdistheatmap, fig.width = 6.1, fig.height = 4.5--------------------
+samplePoisDistMatrix <- as.matrix( poisd$dd )
+rownames(samplePoisDistMatrix) <- paste( dds$dex, dds$cell, sep=" - " )
+colnames(samplePoisDistMatrix) <- NULL
+pheatmap(samplePoisDistMatrix,
+         clustering_distance_rows = poisd$dd,
+         clustering_distance_cols = poisd$dd,
+         col = colors)
+
+#PCA values are projected onto a 2D plane and spread out in 2-directions (PC1 & PC2) to explain most of the differences. 
+## ----plotpca, fig.width=6, fig.height=4.5----------------------------------
+plotPCA(vsd, intgroup = c("dex", "cell"))
+
+#Interesting groups for labeling the samples, use them to choose colors.
+## --------------------------------------------------------------------------
+pcaData <- plotPCA(vsd, intgroup = c( "dex", "cell"), returnData = TRUE)
+pcaData
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+#Building the PCA plot by scratch using ggplot2.
+## ----ggplotpca, fig.width=6, fig.height=4.5--------------------------------
+ggplot(pcaData, aes(x = PC1, y = PC2, color = dex, shape = cell)) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  ggtitle("PCA with VST data")
+
+```
+
+```{r}
+#Technique to perform dimension reduction on data that is not normally distributed. Generalized PCA (GLM-PCA). Avoids downfalls of normalizing the data. 
+## --------------------------------------------------------------------------
+library("glmpca")
+gpca <- glmpca(counts(dds), L=2)
+gpca.dat <- gpca$factors
+gpca.dat$dex <- dds$dex
+gpca.dat$cell <- dds$cell
+
+## ----glmpca, fig.width=6, fig.height=4.5-----------------------------------
+ggplot(gpca.dat, aes(x = dim1, y = dim2, color = dex, shape = cell)) +
+  geom_point(size =3) + coord_fixed() + ggtitle("glmpca - Generalized PCA")
+
+#Similar to the PCA plot, can be made using the multidimensional scaling function. Use this function when you don't have a matrix of data but only a matrix of distances. 
+## ----mdsvst, fig.width=6, fig.height=4.5-----------------------------------
+mds <- as.data.frame(colData(vsd))  %>%
+         cbind(cmdscale(sampleDistMatrix))
+ggplot(mds, aes(x = `1`, y = `2`, color = dex, shape = cell)) +
+  geom_point(size = 3) + coord_fixed() + ggtitle("MDS with VST data")
+
+```
+
+```{r}
+#Same plot for the Poisson Distance.
+## ----mdspois, fig.width=6, fig.height=4.5----------------------------------
+mdsPois <- as.data.frame(colData(dds)) %>%
+   cbind(cmdscale(samplePoisDistMatrix))
+ggplot(mdsPois, aes(x = `1`, y = `2`, color = dex, shape = cell)) +
+  geom_point(size = 3) + coord_fixed() + ggtitle("MDS with PoissonDistances")
+
+#Run differential expressions on raw counts.
+## ----airwayDE--------------------------------------------------------------
+dds <- DESeq(dds)
+
+#Extract the estimated log2 fold changes and p values for the last variable in the design formula. If there are more than 2 levels for this variable, this code with extract results table for a comparison of the last level over the first level. 
+## --------------------------------------------------------------------------
+res <- results(dds)
+res
+
+#produce the same results table above with the following code (because dex is the last variable in the design).
+## --------------------------------------------------------------------------
+res <- results(dds, contrast=c("dex","trt","untrt"))
+
+#Res is a DataFrame object, so that means that it carries metadata with information on the meaning of the columns (column titles?).
+## --------------------------------------------------------------------------
+mcols(res, use.names = TRUE)
+
+#Summary of the results. 
+## --------------------------------------------------------------------------
+summary(res)
+
+#Padj - lowers the false discovery rate threshold. 
+## --------------------------------------------------------------------------
+res.05 <- results(dds, alpha = 0.05)
+table(res.05$padj < 0.05)
+
+#lfcThreshold - raises the log2 fold change threshold from 0. 
+## --------------------------------------------------------------------------
+resLFC1 <- results(dds, lfcThreshold=1)
+table(resLFC1$padj < 0.1)
+
+#Resulots for a comparison of any two levels of a variable can be extracted. Specify 3-values: the name of the variable, the name of the level for the numerator and the name of the level for the denominator. In this example, they extract the results for the log2 of the fold change of one cell line over another. 
+## --------------------------------------------------------------------------
+results(dds, contrast = c("cell", "N061011", "N61311"))
+
+#Corrects fro multiple testing.
+## ----sumres----------------------------------------------------------------
+sum(res$pvalue < 0.05, na.rm=TRUE)
+sum(!is.na(res$pvalue))
+
+#Considers a fraction of 10% false positives as okay for this study and considers genes with an adjusted p-value below 10%=0.1 as significant.
+## --------------------------------------------------------------------------
+sum(res$padj < 0.1, na.rm=TRUE)
+
+#Subset the results table to these genes and then sort it by the log2 fold change estimate to get significant genes with the strongest DOWN-regulation. 
+## --------------------------------------------------------------------------
+resSig <- subset(res, padj < 0.1)
+head(resSig[ order(resSig$log2FoldChange), ])
+
+#Same but for strongest UP-regulation.
+## --------------------------------------------------------------------------
+head(resSig[ order(resSig$log2FoldChange, decreasing = TRUE), ])
+
+#Visulaizes the counts for a particular gene. takes the DESeqDataSet, a gene name, and the group over which to plot the counts. 
+## ----plotcounts------------------------------------------------------------
+topGene <- rownames(res)[which.min(res$padj)]
+plotCounts(dds, gene = topGene, intgroup=c("dex"))
+
+```
+
+```{r}
+#Make custom plots 
+## ----ggplotcountsjitter, fig.width = 4, fig.height = 3---------------------
+library("ggbeeswarm")
+geneCounts <- plotCounts(dds, gene = topGene, intgroup = c("dex","cell"),
+                         returnData = TRUE)
+ggplot(geneCounts, aes(x = dex, y = count, color = cell)) +
+  scale_y_log10() +  geom_beeswarm(cex = 3)
+
+## ----ggplotcountsgroup, fig.width = 4, fig.height = 3----------------------
+ggplot(geneCounts, aes(x = dex, y = count, color = cell, group = cell)) +
+  scale_y_log10() + geom_point(size = 3) + geom_line()
+
+```
+
+```{r}
+#Shrinks the log2 fold changes for the comparison of dex treated vs untreated sampels. 
+## ----plotma----------------------------------------------------------------
+library("apeglm")
+resultsNames(dds)
+res <- lfcShrink(dds, coef="dex_trt_vs_untrt", type="apeglm")
+plotMA(res, ylim = c(-5, 5))
+
+#Creates an MA-plot which provides a useful overview for the sitribution of the estimated coefficents in the model. 
+## ----plotmaNoShr-----------------------------------------------------------
+res.noshr <- results(dds, name="dex_trt_vs_untrt")
+plotMA(res.noshr, ylim = c(-5, 5))
+
+```
+
+```{r}
+#MA-plot of changes induced by treatment. 
+## ----plotmalabel-----------------------------------------------------------
+plotMA(res, ylim = c(-5,5))
+topGene <- rownames(res)[which.min(res$padj)]
+with(res[topGene, ], {
+  points(baseMean, log2FoldChange, col="dodgerblue", cex=2, lwd=2)
+  text(baseMean, log2FoldChange, topGene, pos=2, col="dodgerblue")
+})
+
+#Histogram of the p-values, you should exclude genes from very small counts. 
+## ----histpvalue2-----------------------------------------------------------
+hist(res$pvalue[res$baseMean > 1], breaks = 0:20/20,
+     col = "grey50", border = "white")
+
+```
+
+```{r}
+#Selected 20 genes with the highest variance across samples and created a hierarchical clustering of genes.
+## --------------------------------------------------------------------------
+library("genefilter")
+topVarGenes <- head(order(rowVars(assay(vsd)), decreasing = TRUE), 20)
+
+#Heatmap looking at the amount by which each gene deviates in a specific sample from the gene's average across all samples. 
+## ----genescluster----------------------------------------------------------
+mat  <- assay(vsd)[ topVarGenes, ]
+mat  <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(vsd)[, c("cell","dex")])
+pheatmap(mat, annotation_col = anno)
+
+```
+
+```{r}
+#Poisson noise that any biological effect is drowned in the uncertainties from the sampling at a low rate. We can also show this by examining the ratio of small p values (say, less than 0.05) for genes binned by mean normalized count. We will use the results table subjected to the threshold to show what this looks like in a case when there are few tests with small p value.In the following code chunk, we create bins using the quantile function, bin the genes by base mean using cut, rename the levels of the bins using the middle point, calculate the ratio of p values less than 0.05 for each bin, and finally plot these ratios.
+## ----sensitivityovermean, fig.width=6--------------------------------------
+qs <- c(0, quantile(resLFC1$baseMean[resLFC1$baseMean > 0], 0:6/6))
+bins <- cut(resLFC1$baseMean, qs)
+levels(bins) <- paste0("~", round(signif((qs[-1] + qs[-length(qs)])/2, 2)))
+fractionSig <- tapply(resLFC1$pvalue, bins, function(p)
+                          mean(p < .05, na.rm = TRUE))
+barplot(fractionSig, xlab = "mean normalized count",
+                     ylab = "fraction of small p values")
+
+```
+
+```{r}
+## ---- eval=FALSE-----------------------------------------------------------
+#  library("IHW")
+#  res.ihw <- results(dds, filterFun=ihw)
+
+#Alternative gene names may be more informative for interpretation. "org" - homosapien ("Hs"), "db" - Entrez gene IDs and ("eg") as primary key.
+## --------------------------------------------------------------------------
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+
+## --------------------------------------------------------------------------
+columns(org.Hs.eg.db)
+#Adds individual columns to our results table as a key and specific that keytype=ENSEMBL.Here we ask to just give us back the first one that occurs in the database. To add the gene symbol and Entrez ID, we call mapIds twice.
+## --------------------------------------------------------------------------
+ens.str <- substr(rownames(res), 1, 15)
+res$symbol <- mapIds(org.Hs.eg.db,
+                     keys=ens.str,
+                     column="SYMBOL",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+res$entrez <- mapIds(org.Hs.eg.db,
+                     keys=ens.str,
+                     column="ENTREZID",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+
+```
+
+```{r}
+#Results have the external gene IDs. 
+## --------------------------------------------------------------------------
+resOrdered <- res[order(res$pvalue),]
+head(resOrdered)
+
+#Exporting results
+## ----eval=FALSE------------------------------------------------------------
+#  resOrderedDF <- as.data.frame(resOrdered)[1:100, ]
+#  write.csv(resOrderedDF, file = "results.csv")
+
+## ----eval=FALSE------------------------------------------------------------
+#  library("ReportingTools")
+#  htmlRep <- HTMLReport(shortName="report", title="My report",
+#                        reportDirectory="./report")
+#  publish(resOrderedDF, htmlRep)
+#  url <- finish(htmlRep)
+#  browseURL(url)
+
+#Using then format arguement, we can export lfcShrink results into GRangesList output (to do this you need to use the addExons function from the tximeta package upstream of creating a DESeqDataSet). 
+## --------------------------------------------------------------------------
+resGR <- lfcShrink(dds, coef="dex_trt_vs_untrt", type="apeglm", format="GRanges")
+resGR
+
+```
+
+```{r}
+#Add the symbol again for labeling the genes on the plot. 
+## --------------------------------------------------------------------------
+ens.str <- substr(names(resGR), 1, 15)
+resGR$symbol <- mapIds(org.Hs.eg.db, ens.str, "SYMBOL", "ENSEMBL")
+
+#Plots the GRanges and associated metadata, the log fold changes due to dexamethasone treatment.
+## --------------------------------------------------------------------------
+library("Gviz")
+
+#Specifies a window of 1 million base pairs upstream and downstream from the gene with the smallest p value. We create a subset of our full results, for genes within the window. We add the gene symbol as a name if the symbol exists and is not duplicated in our subset.
+## --------------------------------------------------------------------------
+window <- resGR[topGene] + 1e6
+strand(window) <- "*"
+resGRsub <- resGR[resGR %over% window]
+naOrDup <- is.na(resGRsub$symbol) | duplicated(resGRsub$symbol)
+resGRsub$group <- ifelse(naOrDup, names(resGRsub), resGRsub$symbol)
+
+```
+
+```{r}
+#Create a vector specifying if the genes in this subset had a low value of padj.
+## --------------------------------------------------------------------------
+status <- factor(ifelse(resGRsub$padj < 0.05 & !is.na(resGRsub$padj),
+                        "sig", "notsig"))
+
+```
+
+```{r}
+#Plot the results using Gviz functions and create an axis track specifying our location in the genome, a track that will show the genes and their names, colored by significance, and a data track that will draw vertical bars showing the moderated log fold change produced by DESeq2. We know the change will be large when the information is explained by counts. 
+## ----gvizplot--------------------------------------------------------------
+options(ucscChromosomeNames = FALSE)
+g <- GenomeAxisTrack()
+a <- AnnotationTrack(resGRsub, name = "gene ranges", feature = status)
+d <- DataTrack(resGRsub, data = "log2FoldChange", baseline = 0,
+               type = "h", name = "log2 fold change", strand = "+")
+plotTracks(list(g, d, a), groupAnnotation = "group",
+           notsig = "grey", sig = "hotpink")
+
+```
+
+```{r}
+#Suppose we did not know that there were different cell lines involved in the experiment, only that there was treatment with dexamethasone. The cell line effect on the counts then would represent some hidden and unwanted variation that might be affecting many or all of the genes in the dataset. We can use statistical methods designed for RNA-seq from the sva package. (uses surrogate variables)
+## --------------------------------------------------------------------------
+library("sva")
+
+#Matrix of normalized counts for which the average count across samples is larger than 1. Trying to find any hidden variables that may biasd results. 
+## --------------------------------------------------------------------------
+dat  <- counts(dds, normalized = TRUE)
+idx  <- rowMeans(dat) > 1
+dat  <- dat[idx, ]
+mod  <- model.matrix(~ dex, colData(dds))
+mod0 <- model.matrix(~   1, colData(dds))
+svseq <- svaseq(dat, mod, mod0, n.sv = 2)
+svseq$sv
+
+```
+
+```{r}
+#Because we know the identity and variance between different cell lines, we can see how well the sva method performs at identifying the difference between these variables. 
+## ----svaplot---------------------------------------------------------------
+par(mfrow = c(2, 1), mar = c(3,5,3,1))
+for (i in 1:2) {
+  stripchart(svseq$sv[, i] ~ dds$cell, vertical = TRUE, main = paste0("SV", i))
+  abline(h = 0)
+ }
+```
+
+```{r}
+#Add 2 surrogate variables (SV1 and SV2) as columns to thr DESeqDataSet. 
+## --------------------------------------------------------------------------
+ddssva <- dds
+ddssva$SV1 <- svseq$sv[,1]
+ddssva$SV2 <- svseq$sv[,2]
+design(ddssva) <- ~ SV1 + SV2 + dex
+```
+
+```{r}
+#Produce results controlling for surrogate variables by running DESeq with the new design.
+## --------------------------------------------------------------------------
+library("RUVSeq")
+
+#Estimates factors of unwanted variation (RUVg). irst would run DESeq and results to obtain the p-values for the analysis without knowing about the batches, e.g. just ~ dex. Supposing that we have this results table res, we then pull out a set of empirical control genes by looking at the genes that do not have a small p-value.
+## --------------------------------------------------------------------------
+set <- newSeqExpressionSet(counts(dds))
+idx  <- rowSums(counts(set) > 5) >= 2
+set  <- set[idx, ]
+set <- betweenLaneNormalization(set, which="upper")
+not.sig <- rownames(res)[which(res$pvalue > .1)]
+empirical <- rownames(set)[ rownames(set) %in% not.sig ]
+set <- RUVg(set, empirical, k=2)
+pData(set)
+
+```
+
+```{r}
+
+#Plot the factors estimated by RUV. 
+## ----ruvplot---------------------------------------------------------------
+par(mfrow = c(2, 1), mar = c(3,5,3,1))
+for (i in 1:2) {
+  stripchart(pData(set)[, i] ~ dds$cell, vertical = TRUE, main = paste0("W", i))
+  abline(h = 0)
+ }
+```
+
+```{r}
+#If we wanted to control for these factors, we would add them to the DESeqDataSet and to the design.
+## --------------------------------------------------------------------------
+ddsruv <- dds
+ddsruv$W1 <- set$W_1
+ddsruv$W2 <- set$W_2
+design(ddsruv) <- ~ W1 + W2 + dex
+```
+
+```{r}
+#Fisson data package = time course analysis, contains gene counts for an RNA-seq time course of fission yeast. 
+## --------------------------------------------------------------------------
+library("fission")
+data("fission")
+ddsTC <- DESeqDataSet(fission, ~ strain + minute + strain:minute)
+
+#A likelihood ratio test, where we remove the strain-specific differences over time. Genes with small p values from this test are those which at one or more time points after time 0 showed a strain-specific effect. 
+## ----fissionDE-------------------------------------------------------------
+ddsTC <- DESeq(ddsTC, test="LRT", reduced = ~ strain + minute)
+resTC <- results(ddsTC)
+resTC$symbol <- mcols(ddsTC)$symbol
+head(resTC[order(resTC$padj),], 4)
+```
+
+```{r}
+#Model the counts as a smooth function of time, and to include an interaction term of the condition with the smooth function. Keep in mind that the interaction terms are the difference between the two groups at a given time after accounting for the difference at time 0.
+## ----fissioncounts, fig.width=6, fig.height=4.5----------------------------
+fiss <- plotCounts(ddsTC, which.min(resTC$padj), 
+                   intgroup = c("minute","strain"), returnData = TRUE)
+fiss$minute <- as.numeric(as.character(fiss$minute))
+ggplot(fiss,
+  aes(x = minute, y = count, color = strain, group = strain)) + 
+  geom_point() + stat_summary(fun.y=mean, geom="line") +
+  scale_y_log10()
+```
+
+```{r}
+#Normalized counts for a gene with condition-specific changes over time. 
+## --------------------------------------------------------------------------
+resultsNames(ddsTC)
+res30 <- results(ddsTC, name="strainmut.minute30", test="Wald")
+res30[which.min(resTC$padj),]
+```
+
+```{r}
+#Cluster significant genes by their profiles. We extract a matrix of the shrunken log2 fold changes using the coef function.
+## --------------------------------------------------------------------------
+betas <- coef(ddsTC)
+colnames(betas)
+
+```
+
+```{r}
+#Plot the log2 fold changes in a heatmap.
+## ----fissionheatmap--------------------------------------------------------
+topGenes <- head(order(resTC$padj),20)
+mat <- betas[topGenes, -c(1,2)]
+thr <- 3 
+mat[mat < -thr] <- -thr
+mat[mat > thr] <- thr
+pheatmap(mat, breaks=seq(from=-thr, to=thr, length=101),
+         cluster_col=FALSE)
+```
+
+```{r}
+#Reports the version numbers of R and all the packages used in this session. A good idea incase you code suddenly fails to work. 
+## --------------------------------------------------------------------------
+sessionInfo()
+
+
+```
+

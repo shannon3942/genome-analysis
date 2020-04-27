@@ -1,0 +1,13 @@
+name: Shiny_app_Exercise4
+title: Shiny_app_Exercise4
+username:
+account: shannon3942
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2197294
+bundleId: 3073947
+url: https://shannon3942.shinyapps.io/Shiny_app_Exercise4/
+when: 1588021839.54856
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: app.R|Shiny app #4.R
